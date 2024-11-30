@@ -46,8 +46,8 @@ namespace ntt
         std::unordered_map<std::string, std::function<void()>> _magicSign;
         std::unique_ptr<FilesChunk> _filesChunk;
 
-        void readFile();
-        void initializeMagicSignMap();
+        void _readFile();
+        void _initializeMagicSignMap();
     };
 
     Dat::Dat(const std::string &inputFile)
@@ -69,14 +69,14 @@ namespace ntt
         {
             _fileBuffer.resize(_fileSize);
             _datFile.seekg(std::ios::beg);
-            readFile();
+            _readFile();
         }
 
-        initializeMagicSignMap();
+        _initializeMagicSignMap();
         _filesChunk = std::make_unique<FilesChunk>(_fileBuffer, _fileSize);
     }
 
-    void Dat::readFile()
+    void Dat::_readFile()
     {
         _datFile.seekg(0, std::ios::beg);
         _datFile.read(reinterpret_cast<char *>(_fileBuffer.data()), _fileSize);
@@ -116,7 +116,7 @@ namespace ntt
         spdlog::info("Magic header: {}", readBytesInHex(0x0, 0x7));
     }
 
-    void Dat::initializeMagicSignMap()
+    void Dat::_initializeMagicSignMap()
     {
         _magicSign = {
             {"LZ2K", [this]() { extractLZ2K(); }}};
