@@ -12,7 +12,7 @@ int main(int argc, const char *argv[]) {
             ntt::Dat datFile(argv[fileIndex]);
 
             datFile.readMagicHeader();
-            std::ptrdiff_t offset = datFile.findFileListChunkOffset(".CC40TAD");
+            std::ptrdiff_t offset = datFile.getFilesChunkOffset(".CC40TAD");
 
             datFile.setFilesChunkHeader(offset);
             datFile.parseFilesChunk();

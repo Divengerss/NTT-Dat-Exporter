@@ -33,7 +33,7 @@ namespace ntt
         void readMagicHeader();
         void extractLZ2K();
 
-        std::ptrdiff_t findFileListChunkOffset(const std::string &chunkSign) const;
+        std::ptrdiff_t getFilesChunkOffset(const std::string &chunkSign) const;
 
         void setFilesChunkHeader(const ptrdiff_t headerOffset) { _filesChunk->setChunkHeader(headerOffset); };
         void parseFilesChunk() { _filesChunk->parseChunk(); };
@@ -128,7 +128,7 @@ namespace ntt
     }
 
     // Get the .CC40TAD offset
-    std::ptrdiff_t Dat::findFileListChunkOffset(const std::string &chunkSign) const
+    std::ptrdiff_t Dat::getFilesChunkOffset(const std::string &chunkSign) const
     {
         if (chunkSign.empty() || _fileBuffer.size() < chunkSign.size())
         {
