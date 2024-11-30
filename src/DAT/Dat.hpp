@@ -26,11 +26,32 @@ namespace ntt
         }
     };
 
-    static const std::uint32_t byteswap(std::uint32_t value) {
-        return ((value & 0x000000FF) << 24) |
-            ((value & 0x0000FF00) << 8)  |
-            ((value & 0x00FF0000) >> 8)  |
-            ((value & 0xFF000000) >> 24);
+    template <typename T>
+    static T byteswap(T value) {
+        static_assert(std::is_integral<T>::value, "T must be an integral type");
+        static_assert(sizeof(T) <= 8, "T must be at most 64 bits");
+
+        if constexpr (sizeof(T) == 1) {
+            return value; // No swapping needed for 8-bit integers
+        } else if constexpr (sizeof(T) == 2) {
+            return (T)((value & 0x00FF) << 8 |
+                    (value & 0xFF00) >> 8);
+        } else if constexpr (sizeof(T) == 4) {
+            return (T)((value & 0x000000FF) << 24 |
+                    (value & 0x0000FF00) << 8  |
+                    (value & 0x00FF0000) >> 8  |
+                    (value & 0xFF000000) >> 24);
+        } else if constexpr (sizeof(T) == 8) {
+            return (T)((value & 0x00000000000000FFULL) << 56 |
+                    (value & 0x000000000000FF00ULL) << 40 |
+                    (value & 0x0000000000FF0000ULL) << 24 |
+                    (value & 0x00000000FF000000ULL) << 8  |
+                    (value & 0x000000FF00000000ULL) >> 8  |
+                    (value & 0x0000FF0000000000ULL) >> 24 |
+                    (value & 0x00FF000000000000ULL) >> 40 |
+                    (value & 0xFF00000000000000ULL) >> 56);
+        }
+        return value; // Fallback, should never be reached
     }
 
     static const bool isLittleEndian() {
@@ -210,16 +231,36 @@ namespace ntt
     {
         std::uint32_t readIndex = 0u;
         // std::pair<std::uint64_t, std::uint64_t> defaultKey = {0ull, 0ull}; // NOT IMPLEMENTED
-        std::string currentString;
+        std::string fileName;
+        std::uint32_t fileIndex = 0u;
 
+        std::uint32_t begDummyId = 0;
+        std::uint32_t fileNameOffset = 1;
+        std::uint16_t fileDirectoryId = 0;
+        std::uint16_t someDummyId = 0;
+        std::uint16_t someId = 0;
+        std::uint16_t fileId = 0;
+
+        std::memcpy(&begDummyId, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0x4)], sizeof(std::int32_t));
         while (readIndex < _datCC4_chunkSize - 0x2) {
             if (static_cast<char>(_fileBuffer[_datCC4_offset + 0x1C + readIndex]) != '\0') {
-                currentString.push_back(static_cast<char>(_fileBuffer[_datCC4_offset + 0x1C + readIndex]));
+                fileName.push_back(static_cast<char>(_fileBuffer[_datCC4_offset + 0x1C + readIndex]));
             } else {
-                if (!currentString.empty()) {
-                    _datFilesData[{readIndex, 0}] = currentString;
-                    spdlog::info("Extracting file {}", currentString);
-                    currentString.clear();
+                if (!fileName.empty()) {
+                    std::memcpy(&fileNameOffset, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0xC) + 0x4], sizeof(std::uint32_t));
+                    std::memcpy(&fileDirectoryId, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0xC) + 0x8], sizeof(std::uint16_t));
+                    std::memcpy(&someDummyId, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0xC) + 0xA], sizeof(std::uint16_t));
+                    std::memcpy(&someId, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0xC) + 0xC], sizeof(std::uint16_t));
+                    std::memcpy(&fileId, &_fileBuffer[_datCC4_offset + 0x1C + _datCC4_chunkSize + (fileIndex * 0xC) + 0xE], sizeof(std::uint16_t));
+                    fileNameOffset = byteswap(fileNameOffset);
+                    fileDirectoryId = byteswap(fileDirectoryId);
+                    someDummyId = byteswap(someDummyId);
+                    someId = byteswap(someId);
+                    fileId = byteswap(fileId);
+                    _datFilesData[{readIndex, 0}] = fileName;
+                    spdlog::info("{:08X} {}", fileDirectoryId, fileName);
+                    fileName.clear();
+                    fileIndex += 1;
                 } else {
                     spdlog::warn("The extracted file name was empty");
                 }
