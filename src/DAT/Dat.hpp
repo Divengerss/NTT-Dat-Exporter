@@ -37,6 +37,7 @@ namespace ntt
 
         void setFilesChunkHeader(const ptrdiff_t headerOffset) { _filesChunk->setChunkHeader(headerOffset); };
         void parseFilesChunk() { _filesChunk->parseChunk(); };
+        void getFilesOffset() { _filesChunk->getFilesOffset(); };
 
     private:
         std::string _datFilePath;

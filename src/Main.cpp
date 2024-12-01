@@ -16,6 +16,7 @@ int main(int argc, const char *argv[]) {
 
             datFile.setFilesChunkHeader(offset);
             datFile.parseFilesChunk();
+            datFile.getFilesOffset();
         }
         return 0;
     } catch (const std::ios_base::failure &e) {

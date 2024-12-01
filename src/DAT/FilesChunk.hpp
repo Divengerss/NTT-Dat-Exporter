@@ -20,8 +20,9 @@ namespace ntt
 
             void setChunkHeader(const ptrdiff_t headerOffset);
             void parseChunk();
+            void getFilesOffset();
 
-            void addFile(const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint64_t addr);
+            void addFile(bool isDir, const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint32_t addr);
 
             void createFiles(bool isDir, const std::string &path) const;
 
@@ -34,7 +35,7 @@ namespace ntt
                 std::uint16_t _dirId;
                 std::string _pathName;
                 std::string _fileName;
-                std::uint64_t _dataAddr;
+                std::uint32_t _dataAddr;
 
                 bool operator==(const std::uint16_t parentDirId) const {
                     return _parentDirId == parentDirId;
@@ -46,11 +47,12 @@ namespace ntt
             std::uint32_t _archiveRemainingSize; // The EOF offset from curr offset
             std::uint32_t _ChunkVersion;
             std::uint32_t _FileCount;
+            std::uint32_t _DirCount;
             std::vector<FileInfo> _files;
     };
 
     FilesChunk::FilesChunk(const std::vector<std::byte> &fileBuffer, const std::size_t &fileBufferSize) :
-        _fileBuffer(fileBuffer), _fileBufferSize(fileBufferSize)
+        _fileBuffer(fileBuffer), _fileBufferSize(fileBufferSize), _headerOffset(0ull), _chunkSize(0u), _archiveRemainingSize(0u), _ChunkVersion(0u), _FileCount(0u), _DirCount(0u), _files({})
     {
     }
 
@@ -83,16 +85,18 @@ namespace ntt
     void FilesChunk::parseChunk()
     {
         std::uint32_t readIndex = 0u;
-        // std::pair<std::uint64_t, std::uint64_t> defaultKey = {0ull, 0ull}; // NOT IMPLEMENTED
         std::string fileName;
         std::uint32_t fileIndex = 1u;
 
-        std::uint32_t begDummyId = 0;
-        std::uint32_t fileNameOffset = 1;
-        std::uint16_t fileDirectoryId = 0;
-        std::uint16_t someDummyId = 0;
-        std::uint16_t someId = 0;
-        std::uint16_t fileId = 0;
+        std::uint32_t begDummyId = 0u;
+        std::uint32_t fileNameOffset = 1u;
+        std::uint16_t fileDirectoryId = 0u;
+        std::uint16_t someDummyId = 0u;
+        std::uint16_t someId = 0u;
+        std::uint16_t fileId = 0u;
+        std::uint32_t fileAddr = 0ull;
+
+        bool isDir = false;
 
         std::memcpy(&begDummyId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0x4)], sizeof(std::int32_t));
         while (readIndex < _chunkSize - 0x2) {
@@ -100,6 +104,15 @@ namespace ntt
                 fileName.push_back(static_cast<char>(_fileBuffer[_headerOffset + 0x1C + readIndex]));
             } else {
                 if (!fileName.empty()) {
+                    if (fileName.find('.') == std::string::npos) {
+                        isDir = true;
+                        fileAddr = 0x0u;
+                        _DirCount += 1u;
+                    } 
+                    // else {
+                        // std::memcpy(&fileAddr, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + 0x4AEF0], sizeof(std::uint64_t));
+                        // spdlog::warn("{:X} {}", _headerOffset + 0x1C + _chunkSize + 0x10 + (0xC * (_FileCount + 1067)), _FileCount);
+                    // }
                     std::memcpy(&fileNameOffset, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x4], sizeof(std::uint32_t));
                     std::memcpy(&fileDirectoryId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x8], sizeof(std::uint16_t));
                     std::memcpy(&someDummyId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xA], sizeof(std::uint16_t));
@@ -111,31 +124,41 @@ namespace ntt
                         someDummyId = utils::byteswap(someDummyId);
                         someId = utils::byteswap(someId);
                         fileId = utils::byteswap(fileId);
+                        if (fileAddr != 0x0u)
+                            fileAddr = utils::byteswap(fileAddr);
                     }
-                    // _datFilesData[{readIndex, 0}] = fileName;
-                    addFile(fileDirectoryId, fileIndex, fileName, 0x0ULL /* ADDR NOT IMPLEMENTED */);
+                    addFile(isDir, fileDirectoryId, fileIndex, fileName, fileAddr);
                     // spdlog::info("{:08X} {:08X} {:08X} {:08X} {:08X} {:08X} {}", fileIndex, fileNameOffset, fileDirectoryId, someDummyId, someId, fileId, fileName);
                     fileName.clear();
                     fileIndex += 1;
                 } else {
-                    spdlog::warn("The extracted file name was empty");
+                    spdlog::warn("The file name was empty");
                 }
                 readIndex += 0x1;
             }
             readIndex += 0x1;
+            isDir = false;
         }
-        spdlog::info("Extracted {} files successfully", _FileCount);
+        spdlog::info("Found {} files", _FileCount);
     }
 
-    void FilesChunk::addFile(const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint64_t addr)
+    void FilesChunk::getFilesOffset()
     {
-        bool isDir = false;
-        std::string pathName;
-
-        if (fileName.find('.') == std::string::npos) {
-            isDir = true;
+        for (std::size_t fileIndex = 0ull; fileIndex < _files.size(); ++fileIndex)
+        {
+            std::memcpy(&_files[fileIndex]._dataAddr, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount) + (fileIndex * 0xC)], sizeof(std::uint32_t));
+            if (utils::isLittleEndian()) {
+                _files[fileIndex]._dataAddr = utils::byteswap(_files[fileIndex]._dataAddr);
+            }
+            if (!_files[fileIndex]._isDir)
+                spdlog::info("{:08x} {}", _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
+            // spdlog::info("{:08x} {}", _headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount) + (fileIndex * 0xC), _files[fileIndex]._pathName);
         }
+    }
 
+    void FilesChunk::addFile(bool isDir, const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint32_t addr)
+    {
+        std::string pathName;
         std::uint16_t currentParentId = parentId;
         std::vector<std::string> pathComponents;
 
@@ -156,8 +179,9 @@ namespace ntt
             pathName += component + "/";
         }
         pathName += fileName;
-        spdlog::info("{:#016x} {}", addr, pathName);
-        createFiles(isDir, pathName);
+        // if (!isDir)
+        //     spdlog::info("{:#016x} {}", addr, pathName);
+        // createFiles(isDir, pathName);
         _files.push_back({isDir, parentId, id, pathName, fileName, addr});
     }
 
