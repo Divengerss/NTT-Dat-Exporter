@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <vector>
 #include <stdexcept>
+#include <filesystem>
+#include <fstream>
 #include "spdlog/spdlog.h"
 #include "Utils/ByteSwap.hpp"
 
@@ -20,6 +22,8 @@ namespace ntt
             void parseChunk();
 
             void addFile(const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint64_t addr);
+
+            void createFiles(bool isDir, const std::string &path) const;
 
         private:
             const std::vector<std::byte> &_fileBuffer;
@@ -153,7 +157,24 @@ namespace ntt
         }
         pathName += fileName;
         spdlog::info("{:#016x} {}", addr, pathName);
+        createFiles(isDir, pathName);
         _files.push_back({isDir, parentId, id, pathName, fileName, addr});
+    }
+
+    void FilesChunk::createFiles(bool isDir, const std::string &path) const
+    {
+        std::error_code errCode;
+        std::string relativePath = "./Content/" + path;
+
+        if (std::filesystem::exists(relativePath)) {
+            return;
+        } else if (isDir && !std::filesystem::create_directories(relativePath)) {
+            spdlog::error("Could not create the files/directories for {}: {}", path, errCode.message());
+            errCode.clear();
+        } else if (!isDir) {
+            std::ofstream file(relativePath);
+            file.close();
+        }
     }
 
 } // namespace nxg
