@@ -35,3 +35,6 @@
 build/
 .xmake/
 .vscode/
+
+# Debug/Test files
+test.txt

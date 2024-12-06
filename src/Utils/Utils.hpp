@@ -47,6 +47,16 @@ namespace utils
         std::uint16_t test = 1;
         return *reinterpret_cast<std::uint8_t*>(&test) == 1;
     }
+
+    template <typename T, typename U>
+    static T &assignFromMemory(T &dest, const U &src, const std::size_t &size, bool byteSwap = false)
+    {
+        std::memcpy(&dest, &src, size);
+        if (byteSwap) {
+            dest = utils::byteswap(dest);
+        }
+        return dest;
+    }
 } // namespace utils
 
 #endif // BYTESWAP_HPP

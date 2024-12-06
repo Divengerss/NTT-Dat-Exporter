@@ -8,7 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include "spdlog/spdlog.h"
-#include "Utils/ByteSwap.hpp"
+#include "Utils/Utils.hpp"
 
 namespace ntt
 {
@@ -36,6 +36,9 @@ namespace ntt
                 std::string _pathName;
                 std::string _fileName;
                 std::uint32_t _dataAddr;
+                std::uint32_t _fileSize;
+                std::uint32_t _fileZsize;
+                std::uint32_t _packedVer;
 
                 bool operator==(const std::uint16_t parentDirId) const {
                     return _parentDirId == parentDirId;
@@ -67,17 +70,10 @@ namespace ntt
         if (_headerOffset < 4 || _headerOffset > _fileBufferSize) {
             throw std::out_of_range("Invalid offset provided!");
         }
-        std::memcpy(&_archiveRemainingSize, &_fileBuffer[_headerOffset - 0x4], sizeof(std::uint32_t));
-        std::memcpy(&_ChunkVersion, &_fileBuffer[_headerOffset + 0xC], sizeof(std::uint32_t));
-        std::memcpy(&_FileCount, &_fileBuffer[_headerOffset + 0x10], sizeof(std::uint32_t));
-        std::memcpy(&_chunkSize, &_fileBuffer[_headerOffset + 0x18], sizeof(std::uint32_t));
-
-        if (utils::isLittleEndian()) {
-            _archiveRemainingSize = utils::byteswap(_archiveRemainingSize);
-            _chunkSize = utils::byteswap(_chunkSize);
-            _ChunkVersion = utils::byteswap(_ChunkVersion);
-            _FileCount = utils::byteswap(_FileCount);
-        }
+        _archiveRemainingSize = utils::assignFromMemory(_archiveRemainingSize, _fileBuffer[_headerOffset - 0x4], sizeof(std::uint32_t), true);
+        _ChunkVersion = utils::assignFromMemory(_ChunkVersion, _fileBuffer[_headerOffset + 0xC], sizeof(std::uint32_t), true);
+        _FileCount = utils::assignFromMemory(_FileCount, _fileBuffer[_headerOffset + 0x10], sizeof(std::uint32_t), true);
+        _chunkSize = utils::assignFromMemory(_chunkSize, _fileBuffer[_headerOffset + 0x18], sizeof(std::uint32_t), true);
 
         spdlog::info("Remaining chunk size {:X}", _chunkSize);
     }
@@ -98,7 +94,7 @@ namespace ntt
 
         bool isDir = false;
 
-        std::memcpy(&begDummyId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0x4)], sizeof(std::int32_t));
+        begDummyId = utils::assignFromMemory(begDummyId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0x4)], sizeof(std::uint32_t), false);
         while (readIndex < _chunkSize - 0x2) {
             if (static_cast<char>(_fileBuffer[_headerOffset + 0x1C + readIndex]) != '\0') {
                 fileName.push_back(static_cast<char>(_fileBuffer[_headerOffset + 0x1C + readIndex]));
@@ -108,25 +104,17 @@ namespace ntt
                         isDir = true;
                         fileAddr = 0x0u;
                         _DirCount += 1u;
-                    } 
+                    }
                     // else {
                         // std::memcpy(&fileAddr, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + 0x4AEF0], sizeof(std::uint64_t));
                         // spdlog::warn("{:X} {}", _headerOffset + 0x1C + _chunkSize + 0x10 + (0xC * (_FileCount + 1067)), _FileCount);
                     // }
-                    std::memcpy(&fileNameOffset, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x4], sizeof(std::uint32_t));
-                    std::memcpy(&fileDirectoryId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x8], sizeof(std::uint16_t));
-                    std::memcpy(&someDummyId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xA], sizeof(std::uint16_t));
-                    std::memcpy(&someId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xC], sizeof(std::uint16_t));
-                    std::memcpy(&fileId, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xE], sizeof(std::uint16_t));
-                    if (utils::isLittleEndian()) {
-                        fileNameOffset = utils::byteswap(fileNameOffset);
-                        fileDirectoryId = utils::byteswap(fileDirectoryId);
-                        someDummyId = utils::byteswap(someDummyId);
-                        someId = utils::byteswap(someId);
-                        fileId = utils::byteswap(fileId);
-                        if (fileAddr != 0x0u)
-                            fileAddr = utils::byteswap(fileAddr);
-                    }
+                    fileNameOffset = utils::assignFromMemory(fileNameOffset, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x4], sizeof(std::uint32_t), true);
+                    fileDirectoryId = utils::assignFromMemory(fileDirectoryId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x8], sizeof(std::uint16_t), true);
+                    someDummyId = utils::assignFromMemory(someDummyId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xA], sizeof(std::uint16_t), true);
+                    someId = utils::assignFromMemory(someId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xC], sizeof(std::uint16_t), true);
+                    fileId = utils::assignFromMemory(fileId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xE], sizeof(std::uint16_t), true);
+
                     addFile(isDir, fileDirectoryId, fileIndex, fileName, fileAddr);
                     // spdlog::info("{:08X} {:08X} {:08X} {:08X} {:08X} {:08X} {}", fileIndex, fileNameOffset, fileDirectoryId, someDummyId, someId, fileId, fileName);
                     fileName.clear();
@@ -144,15 +132,28 @@ namespace ntt
 
     void FilesChunk::getFilesOffset()
     {
-        for (std::size_t fileIndex = 0ull; fileIndex < _files.size(); ++fileIndex)
+        std::size_t chunkOffset = _headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount);
+        std::size_t fileOffset = 0ull;
+
+        std::uint32_t typeBOH = 0u;
+        std::uint32_t fileCount2 = 0u; // Data from the archive
+
+        typeBOH = utils::assignFromMemory(typeBOH, _fileBuffer[chunkOffset], sizeof(std::uint32_t), true);
+        fileCount2 = utils::assignFromMemory(fileCount2, _fileBuffer[chunkOffset + 0x4], sizeof(std::uint32_t), true);
+        
+        if (_FileCount != fileCount2)
+            spdlog::warn("The number of files read from the archive differ from last check.");
+
+        for (std::size_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
-            std::memcpy(&_files[fileIndex]._dataAddr, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount) + (fileIndex * 0xC)], sizeof(std::uint32_t));
-            if (utils::isLittleEndian()) {
-                _files[fileIndex]._dataAddr = utils::byteswap(_files[fileIndex]._dataAddr);
-            }
-            if (!_files[fileIndex]._isDir)
+            if (!_files[fileIndex]._isDir) {
+                _files[fileIndex]._packedVer = utils::assignFromMemory(_files[fileIndex]._packedVer, _fileBuffer[chunkOffset + 0x8 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._dataAddr = utils::assignFromMemory(_files[fileIndex]._dataAddr, _fileBuffer[chunkOffset + 0xC + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._fileZsize = utils::assignFromMemory(_files[fileIndex]._fileZsize, _fileBuffer[chunkOffset + 0x10 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._fileSize = utils::assignFromMemory(_files[fileIndex]._fileSize, _fileBuffer[chunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                fileOffset += 1;
                 spdlog::info("{:08x} {}", _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
-            // spdlog::info("{:08x} {}", _headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount) + (fileIndex * 0xC), _files[fileIndex]._pathName);
+            }
         }
     }
 
