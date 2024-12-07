@@ -60,6 +60,7 @@ namespace ntt
             std::vector<FileInfo> _files;
             std::size_t _filesChunkOffset;
             std::vector<std::uint32_t> _crcDatabase;
+            std::vector<std::uint32_t> _addrList;
 
             std::string _normalizeFilename(const std::string &fullname) const;
     };
@@ -161,8 +162,9 @@ namespace ntt
                 _files[fileIndex]._dataAddr = utils::assignFromMemory(_files[fileIndex]._dataAddr, _fileBuffer[_filesChunkOffset + 0xC + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 _files[fileIndex]._fileZsize = utils::assignFromMemory(_files[fileIndex]._fileZsize, _fileBuffer[_filesChunkOffset + 0x10 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 _files[fileIndex]._fileSize = utils::assignFromMemory(_files[fileIndex]._fileSize, _fileBuffer[_filesChunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _addrList.push_back(_files[fileIndex]._dataAddr);
                 fileOffset += 1;
-                // spdlog::info("{:08x} {}", _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
+                // spdlog::info("{} {:08x} {}", fileIndex, _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
             }
         }
     }
@@ -217,7 +219,7 @@ namespace ntt
         std::size_t chunkOffset = _filesChunkOffset + (_FileCount * 0x10) + 0x8;
         std::uint32_t crc = 0u;
 
-        spdlog::info("offset = {:08x}", chunkOffset);
+        // spdlog::info("offset = {:08x}", chunkOffset);
         for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
         {
             crc = utils::assignFromMemory(crc, _fileBuffer[chunkOffset + fileIndex * 0x4], sizeof(std::uint32_t), true);
@@ -245,28 +247,32 @@ namespace ntt
         const std::uint32_t CRC_FNV_PRIME = 0x199933;
         std::uint32_t crc = CRC_FNV_OFFSET;
         std::ptrdiff_t idx = 0;
+        std::string normalizedPath;
 
-        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
+        spdlog::info("{} {}", _FileCount + _DirCount, _crcDatabase.size());
+        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
             crc = CRC_FNV_OFFSET;
+            normalizedPath.clear();
             if (!_files[fileIndex]._isDir) {
-                _files[fileIndex]._crcPath = _normalizeFilename(_files[fileIndex]._pathName);
-                for (char c : _files[fileIndex]._crcPath) {
+                normalizedPath = _normalizeFilename(_files[fileIndex]._pathName);
+                for (char c : normalizedPath) {
                     crc ^= static_cast<std::uint8_t>(c);
                     crc *= CRC_FNV_PRIME;
                 }
-                _files[fileIndex]._crcValue = crc;
 
-                auto it = std::find(_crcDatabase.begin(), _crcDatabase.end(), _files[fileIndex]._crcValue);
+                auto it = std::find(_crcDatabase.begin(), _crcDatabase.end(), crc);
                 if (it != _crcDatabase.end()) {
                     idx = std::distance(_crcDatabase.begin(), it);
+                    _files[fileIndex]._crcValue = crc;
+                    _files[fileIndex]._crcPath = normalizedPath;
+                    _files[fileIndex]._dataAddr = _addrList[idx];
                 } else {
                     spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._crcPath);
                 }
-                spdlog::info("CRC = {:08x} {} {:08x} {}", _files[fileIndex]._crcValue, idx, _files[idx]._dataAddr, _files[fileIndex]._crcPath);
+                spdlog::info("CRC = {:08x} {} {:08x} {}", _files[fileIndex]._crcValue, idx, _files[fileIndex]._dataAddr, _files[fileIndex]._crcPath);
             }
         }
-
     }
 
 } // namespace nxg
