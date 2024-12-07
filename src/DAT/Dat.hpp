@@ -38,6 +38,8 @@ namespace ntt
         void setFilesChunkHeader(const ptrdiff_t headerOffset) { _filesChunk->setChunkHeader(headerOffset); };
         void parseFilesChunk() { _filesChunk->parseChunk(); };
         void getFilesOffset() { _filesChunk->getFilesOffset(); };
+        void setCRCdatabase() { _filesChunk->defineCRCdatabase(); };
+        void computeCRC() { _filesChunk->computeCRC(); };
 
     private:
         std::string _datFilePath;

@@ -26,6 +26,10 @@ namespace ntt
 
             void createFiles(bool isDir, const std::string &path) const;
 
+            void defineCRCdatabase();
+
+            void computeCRC();
+
         private:
             const std::vector<std::byte> &_fileBuffer;
             const std::size_t &_fileBufferSize;
@@ -35,10 +39,12 @@ namespace ntt
                 std::uint16_t _dirId;
                 std::string _pathName;
                 std::string _fileName;
+                std::string _crcPath;
                 std::uint32_t _dataAddr;
                 std::uint32_t _fileSize;
                 std::uint32_t _fileZsize;
                 std::uint32_t _packedVer;
+                std::uint32_t _crcValue;
 
                 bool operator==(const std::uint16_t parentDirId) const {
                     return _parentDirId == parentDirId;
@@ -52,10 +58,14 @@ namespace ntt
             std::uint32_t _FileCount;
             std::uint32_t _DirCount;
             std::vector<FileInfo> _files;
+            std::size_t _filesChunkOffset;
+            std::vector<std::uint32_t> _crcDatabase;
+
+            std::string _normalizeFilename(const std::string &fullname) const;
     };
 
     FilesChunk::FilesChunk(const std::vector<std::byte> &fileBuffer, const std::size_t &fileBufferSize) :
-        _fileBuffer(fileBuffer), _fileBufferSize(fileBufferSize), _headerOffset(0ull), _chunkSize(0u), _archiveRemainingSize(0u), _ChunkVersion(0u), _FileCount(0u), _DirCount(0u), _files({})
+        _fileBuffer(fileBuffer), _fileBufferSize(fileBufferSize), _headerOffset(0ull), _chunkSize(0u), _archiveRemainingSize(0u), _ChunkVersion(0u), _FileCount(0u), _DirCount(0u), _files({}), _filesChunkOffset(0ull), _crcDatabase({})
     {
     }
 
@@ -132,14 +142,14 @@ namespace ntt
 
     void FilesChunk::getFilesOffset()
     {
-        std::size_t chunkOffset = _headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount);
+        _filesChunkOffset = _headerOffset + 0x1C + _chunkSize + 0x10 + 0xC * (_FileCount + _DirCount);
         std::size_t fileOffset = 0ull;
 
         std::uint32_t typeBOH = 0u;
         std::uint32_t fileCount2 = 0u; // Data from the archive
 
-        typeBOH = utils::assignFromMemory(typeBOH, _fileBuffer[chunkOffset], sizeof(std::uint32_t), true);
-        fileCount2 = utils::assignFromMemory(fileCount2, _fileBuffer[chunkOffset + 0x4], sizeof(std::uint32_t), true);
+        typeBOH = utils::assignFromMemory(typeBOH, _fileBuffer[_filesChunkOffset], sizeof(std::uint32_t), true);
+        fileCount2 = utils::assignFromMemory(fileCount2, _fileBuffer[_filesChunkOffset + 0x4], sizeof(std::uint32_t), true);
         
         if (_FileCount != fileCount2)
             spdlog::warn("The number of files read from the archive differ from last check.");
@@ -147,12 +157,12 @@ namespace ntt
         for (std::size_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
             if (!_files[fileIndex]._isDir) {
-                _files[fileIndex]._packedVer = utils::assignFromMemory(_files[fileIndex]._packedVer, _fileBuffer[chunkOffset + 0x8 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
-                _files[fileIndex]._dataAddr = utils::assignFromMemory(_files[fileIndex]._dataAddr, _fileBuffer[chunkOffset + 0xC + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
-                _files[fileIndex]._fileZsize = utils::assignFromMemory(_files[fileIndex]._fileZsize, _fileBuffer[chunkOffset + 0x10 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
-                _files[fileIndex]._fileSize = utils::assignFromMemory(_files[fileIndex]._fileSize, _fileBuffer[chunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._packedVer = utils::assignFromMemory(_files[fileIndex]._packedVer, _fileBuffer[_filesChunkOffset + 0x8 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._dataAddr = utils::assignFromMemory(_files[fileIndex]._dataAddr, _fileBuffer[_filesChunkOffset + 0xC + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._fileZsize = utils::assignFromMemory(_files[fileIndex]._fileZsize, _fileBuffer[_filesChunkOffset + 0x10 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
+                _files[fileIndex]._fileSize = utils::assignFromMemory(_files[fileIndex]._fileSize, _fileBuffer[_filesChunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 fileOffset += 1;
-                spdlog::info("{:08x} {}", _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
+                // spdlog::info("{:08x} {}", _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
             }
         }
     }
@@ -183,7 +193,7 @@ namespace ntt
         // if (!isDir)
         //     spdlog::info("{:#016x} {}", addr, pathName);
         // createFiles(isDir, pathName);
-        _files.push_back({isDir, parentId, id, pathName, fileName, addr});
+        _files.push_back({isDir, parentId, id, pathName, fileName, pathName, addr, 0x0u});
     }
 
     void FilesChunk::createFiles(bool isDir, const std::string &path) const
@@ -202,7 +212,63 @@ namespace ntt
         }
     }
 
-} // namespace nxg
+    void FilesChunk::defineCRCdatabase()
+    {
+        std::size_t chunkOffset = _filesChunkOffset + (_FileCount * 0x10) + 0x8;
+        std::uint32_t crc = 0u;
 
+        spdlog::info("offset = {:08x}", chunkOffset);
+        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
+        {
+            crc = utils::assignFromMemory(crc, _fileBuffer[chunkOffset + fileIndex * 0x4], sizeof(std::uint32_t), true);
+            // spdlog::info("crc {:08x}", crc);
+            _crcDatabase.push_back(crc);
+        }
+    }
+
+    std::string FilesChunk::_normalizeFilename(const std::string &fullname) const {
+        std::string normalized = fullname;
+
+        std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](char c) {
+            if (c == '/') {
+                return '\\';
+            }
+            return static_cast<char>(std::toupper(c));
+        });
+
+        return normalized;
+    }
+
+    void FilesChunk::computeCRC() // FNV-a1
+    {
+        const std::uint32_t CRC_FNV_OFFSET = 0x811c9dc5;
+        const std::uint32_t CRC_FNV_PRIME = 0x199933;
+        std::uint32_t crc = CRC_FNV_OFFSET;
+        std::ptrdiff_t idx = 0;
+
+        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
+        {
+            crc = CRC_FNV_OFFSET;
+            if (!_files[fileIndex]._isDir) {
+                _files[fileIndex]._crcPath = _normalizeFilename(_files[fileIndex]._pathName);
+                for (char c : _files[fileIndex]._crcPath) {
+                    crc ^= static_cast<std::uint8_t>(c);
+                    crc *= CRC_FNV_PRIME;
+                }
+                _files[fileIndex]._crcValue = crc;
+
+                auto it = std::find(_crcDatabase.begin(), _crcDatabase.end(), _files[fileIndex]._crcValue);
+                if (it != _crcDatabase.end()) {
+                    idx = std::distance(_crcDatabase.begin(), it);
+                } else {
+                    spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._crcPath);
+                }
+                spdlog::info("CRC = {:08x} {} {:08x} {}", _files[fileIndex]._crcValue, idx, _files[idx]._dataAddr, _files[fileIndex]._crcPath);
+            }
+        }
+
+    }
+
+} // namespace nxg
 
 #endif // FILESCHUNK_HPP
