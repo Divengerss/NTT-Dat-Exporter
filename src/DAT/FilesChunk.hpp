@@ -23,11 +23,8 @@ namespace ntt
             void getFilesOffset();
 
             void addFile(bool isDir, const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint32_t addr);
-
             void createFiles(bool isDir, const std::string &path) const;
-
             void defineCRCdatabase();
-
             void computeCRC();
 
         private:
@@ -88,8 +85,6 @@ namespace ntt
         _ChunkVersion = utils::assignFromMemory(_ChunkVersion, _fileBuffer[_headerOffset + 0xC], sizeof(std::uint32_t), true);
         _FileCount = utils::assignFromMemory(_FileCount, _fileBuffer[_headerOffset + 0x10], sizeof(std::uint32_t), true);
         _chunkSize = utils::assignFromMemory(_chunkSize, _fileBuffer[_headerOffset + 0x18], sizeof(std::uint32_t), true);
-
-        spdlog::info("Remaining chunk size {:X}", _chunkSize);
     }
 
     void FilesChunk::parseChunk()
@@ -119,10 +114,6 @@ namespace ntt
                         fileAddr = 0x0u;
                         _DirCount += 1u;
                     }
-                    // else {
-                        // std::memcpy(&fileAddr, &_fileBuffer[_headerOffset + 0x1C + _chunkSize + 0x4AEF0], sizeof(std::uint64_t));
-                        // spdlog::warn("{:X} {}", _headerOffset + 0x1C + _chunkSize + 0x10 + (0xC * (_FileCount + 1067)), _FileCount);
-                    // }
                     fileNameOffset = utils::assignFromMemory(fileNameOffset, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x4], sizeof(std::uint32_t), true);
                     fileDirectoryId = utils::assignFromMemory(fileDirectoryId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0x8], sizeof(std::uint16_t), true);
                     someDummyId = utils::assignFromMemory(someDummyId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xA], sizeof(std::uint16_t), true);
@@ -130,7 +121,6 @@ namespace ntt
                     fileId = utils::assignFromMemory(fileId, _fileBuffer[_headerOffset + 0x1C + _chunkSize + (fileIndex * 0xC) + 0xE], sizeof(std::uint16_t), true);
 
                     addFile(isDir, fileDirectoryId, fileIndex, fileName, fileAddr);
-                    // spdlog::info("{:08X} {:08X} {:08X} {:08X} {:08X} {:08X} {}", fileIndex, fileNameOffset, fileDirectoryId, someDummyId, someId, fileId, fileName);
                     fileName.clear();
                     fileIndex += 1;
                 } else {
@@ -168,7 +158,6 @@ namespace ntt
                 crc._fileSize = utils::assignFromMemory(crc._fileSize, _fileBuffer[_filesChunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 _CRCs.push_back(crc);
                 fileOffset += 1;
-                // spdlog::info("{} {:08x} {}", fileIndex, _files[fileIndex]._dataAddr, _files[fileIndex]._pathName);
             }
         }
     }
@@ -196,9 +185,7 @@ namespace ntt
             pathName += component + "/";
         }
         pathName += fileName;
-        // if (!isDir)
-        //     spdlog::info("{:#016x} {}", addr, pathName);
-        // createFiles(isDir, pathName);
+        // createFiles(isDir, pathName); REMOVED FOR DEV
         _files.push_back({isDir, parentId, id, pathName, fileName});
     }
 
@@ -223,11 +210,9 @@ namespace ntt
         std::size_t chunkOffset = _filesChunkOffset + (_FileCount * 0x10) + 0x8;
         std::uint32_t crc = 0u;
 
-        // spdlog::info("offset = {:08x}", chunkOffset);
         for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
         {
             crc = utils::assignFromMemory(crc, _fileBuffer[chunkOffset + fileIndex * 0x4], sizeof(std::uint32_t), true);
-            // spdlog::info("crc {:08x}", crc);
             _crcDatabase.push_back(crc);
         }
     }
