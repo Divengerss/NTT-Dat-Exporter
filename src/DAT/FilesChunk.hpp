@@ -270,6 +270,9 @@ namespace ntt
                     _CRCs[fileIndex]._crcValue = crc;
                     _CRCs[fileIndex]._crcPath = normalizedPath;
                     _CRCs[fileIndex]._dataAddr = _CRCs[idx]._dataAddr;
+                    _CRCs[fileIndex]._fileZsize = _CRCs[idx]._fileZsize;
+                    _CRCs[fileIndex]._fileSize = _CRCs[idx]._fileSize;
+                    _CRCs[fileIndex]._dataAddr = _CRCs[idx]._dataAddr;
                     _files[fileIndex]._CRC = _CRCs[fileIndex];
                 } else {
                     spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._pathName);
