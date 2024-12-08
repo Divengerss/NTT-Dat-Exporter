@@ -14,11 +14,13 @@ int main(int argc, const char *argv[]) {
             datFile.readMagicHeader();
             std::ptrdiff_t offset = datFile.getFilesChunkOffset(".CC40TAD");
 
+            // Need to handle errors
             datFile.setFilesChunkHeader(offset);
             datFile.parseFilesChunk();
             datFile.getFilesOffset();
             datFile.setCRCdatabase();
             datFile.computeCRC();
+            datFile.readFilesBuffer();
         }
         return 0;
     } catch (const std::ios_base::failure &e) {

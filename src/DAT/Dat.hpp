@@ -40,6 +40,7 @@ namespace ntt
         void getFilesOffset() { _filesChunk->getFilesOffset(); };
         void setCRCdatabase() { _filesChunk->defineCRCdatabase(); };
         void computeCRC() { _filesChunk->computeCRC(); };
+        void readFilesBuffer() { _filesChunk->readFilesOffsetBuffer(); };
 
     private:
         std::string _datFilePath;

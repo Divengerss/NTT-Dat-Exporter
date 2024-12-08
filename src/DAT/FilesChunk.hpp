@@ -23,9 +23,9 @@ namespace ntt
             void getFilesOffset();
 
             void addFile(bool isDir, const std::uint16_t parentId, const std::uint16_t id, const std::string &fileName, const std::uint32_t addr);
-            void createFiles(bool isDir, const std::string &path) const;
             void defineCRCdatabase();
             void computeCRC();
+            void readFilesOffsetBuffer();
 
         private:
             const std::vector<std::byte> &_fileBuffer;
@@ -45,6 +45,7 @@ namespace ntt
                 std::string _pathName;
                 std::string _fileName;
                 CRCInfo _CRC;
+                std::vector<std::byte> _dataBuffer;
 
                 bool operator==(const std::uint16_t parentDirId) const {
                     return _parentDirId == parentDirId;
@@ -63,6 +64,7 @@ namespace ntt
             std::vector<CRCInfo> _CRCs;
 
             std::string _normalizeFilename(const std::string &fullname) const;
+            void _createFile(FileInfo &fileInfo) const;
     };
 
     FilesChunk::FilesChunk(const std::vector<std::byte> &fileBuffer, const std::size_t &fileBufferSize) :
@@ -186,23 +188,49 @@ namespace ntt
             pathName += component + "/";
         }
         pathName += fileName;
-        // createFiles(isDir, pathName); REMOVED FOR DEV
-        _files.push_back({isDir, parentId, id, pathName, fileName});
+        _files.push_back({isDir, parentId, id, pathName, fileName, {}, {}});
     }
 
-    void FilesChunk::createFiles(bool isDir, const std::string &path) const
+    void FilesChunk::_createFile(FileInfo &fileInfo) const
     {
-        std::error_code errCode;
-        std::string relativePath = "./Content/" + path;
+        std::string relativePath = "./Content/" + fileInfo._pathName;
 
         if (std::filesystem::exists(relativePath)) {
+            spdlog::warn("Already exists: {}", relativePath);
             return;
-        } else if (isDir && !std::filesystem::create_directories(relativePath)) {
-            spdlog::error("Could not create the files/directories for {}: {}", path, errCode.message());
-            errCode.clear();
-        } else if (!isDir) {
-            std::ofstream file(relativePath);
-            file.close();
+        }
+
+        if (fileInfo._isDir) {
+            std::error_code errCode;
+            if (!std::filesystem::create_directories(relativePath, errCode)) {
+                spdlog::error("Could not create directories for {}: {}", fileInfo._pathName, errCode.message());
+            }
+        } else {
+            std::error_code errCode;
+            auto parentPath = std::filesystem::path(relativePath).parent_path();
+            if (!parentPath.empty() && !std::filesystem::exists(parentPath)) {
+                if (!std::filesystem::create_directories(parentPath, errCode)) {
+                    spdlog::error("Could not create parent directories for file {}: {}", fileInfo._pathName, errCode.message());
+                    return;
+                }
+            }
+
+            std::ofstream file(relativePath, std::ios::out);
+            if (!file) {
+                spdlog::error("Failed to create file: {}", relativePath);
+            } else {
+                if (!fileInfo._dataBuffer.empty()) {
+                    file.write(reinterpret_cast<const char *>(fileInfo._dataBuffer.data()), fileInfo._dataBuffer.size());
+                    if (!file) {
+                        spdlog::error("Failed to write data to file: {}", relativePath);
+                    } else {
+                        spdlog::info("{:08x} {:<8} {}", fileInfo._CRC._dataAddr, fileInfo._CRC._fileZsize, fileInfo._pathName);
+                    }
+                } else {
+                    spdlog::warn("{:08x} {:<8} {}", fileInfo._CRC._dataAddr, 0, fileInfo._pathName);
+                }
+                file.close();
+            }
         }
     }
 
@@ -269,8 +297,24 @@ namespace ntt
                 } else {
                     spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._pathName);
                 }
-                spdlog::info("{:08x} {:08x} {:08x} {}", _files[fileIndex]._CRC._dataAddr, _files[fileIndex]._CRC._fileZsize, _files[fileIndex]._CRC._fileSize, _files[fileIndex]._CRC._crcPath);
+                // spdlog::info("{:08x} {:08x} {:08x} {}", _files[fileIndex]._CRC._dataAddr, _files[fileIndex]._CRC._fileZsize, _files[fileIndex]._CRC._fileSize, _files[fileIndex]._CRC._crcPath);
             }
+        }
+    }
+
+    void FilesChunk::readFilesOffsetBuffer()
+    {
+        for (FileInfo &file : _files) {
+            if (!file._isDir) {
+                if (file._CRC._fileSize != file._CRC._fileZsize) { // File is compressed
+                    file._dataBuffer.resize(file._CRC._fileZsize);
+                    std::memcpy(file._dataBuffer.data(), &_fileBuffer[file._CRC._dataAddr], static_cast<std::size_t>(file._CRC._fileZsize));
+                } else {
+                    file._dataBuffer.resize(file._CRC._fileSize);
+                    std::memcpy(file._dataBuffer.data(), &_fileBuffer[file._CRC._dataAddr], static_cast<std::size_t>(file._CRC._fileSize));
+                }
+            }
+            _createFile(file);
         }
     }
 
