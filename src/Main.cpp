@@ -21,6 +21,7 @@ int main(int argc, const char *argv[]) {
             datFile.setCRCdatabase();
             datFile.computeCRC();
             datFile.readFilesBuffer();
+            datFile.decompressFiles();
         }
         return 0;
     } catch (const std::ios_base::failure &e) {

@@ -1,17 +1,22 @@
 add_rules("mode.debug", "mode.release")
-add_requires("spdlog")
+add_requires("spdlog", "zlib")
 
 set_languages("c++20")
 set_policy("build.warning", true)
 set_warnings("all", "error")
 add_cxxflags("-Wall", "-O2")
 
-add_packages("spdlog")
+add_packages("spdlog", "zlib")
+
+includes("lib/ZipX")
+includes("lib/LZ2K")
 
 target("NTT-Dat-Exporter")
     set_kind("binary")
-    add_includedirs("src")
+    add_includedirs("include", "src")
     add_files("src/*.cpp")
+    add_linkdirs("$(buildir)")
+    add_deps("ZipX", "LZ2K")
 
 --
 -- If you want to known more usage about xmake, please see https://xmake.io

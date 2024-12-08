@@ -7,8 +7,12 @@
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
+#include <array>
 #include "spdlog/spdlog.h"
 #include "Utils/Utils.hpp"
+#include "BaseHandler.hpp"
+#include "ZipX.hpp"
+#include "LZ2K.hpp"
 
 namespace ntt
 {
@@ -26,6 +30,7 @@ namespace ntt
             void defineCRCdatabase();
             void computeCRC();
             void readFilesOffsetBuffer();
+            void decompressFiles();
 
         private:
             const std::vector<std::byte> &_fileBuffer;
@@ -224,7 +229,7 @@ namespace ntt
                     if (!file) {
                         spdlog::error("Failed to write data to file: {}", relativePath);
                     } else {
-                        spdlog::info("{:08x} {:<8} {}", fileInfo._CRC._dataAddr, fileInfo._CRC._fileZsize, fileInfo._pathName);
+                        spdlog::info("{:08x} {:<8} {} {}", fileInfo._CRC._dataAddr, fileInfo._CRC._fileZsize, fileInfo._CRC._fileSize, fileInfo._pathName);
                     }
                 } else {
                     spdlog::warn("{:08x} {:<8} {}", fileInfo._CRC._dataAddr, 0, fileInfo._pathName);
@@ -297,7 +302,6 @@ namespace ntt
                 } else {
                     spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._pathName);
                 }
-                // spdlog::info("{:08x} {:08x} {:08x} {}", _files[fileIndex]._CRC._dataAddr, _files[fileIndex]._CRC._fileZsize, _files[fileIndex]._CRC._fileSize, _files[fileIndex]._CRC._crcPath);
             }
         }
     }
@@ -314,7 +318,35 @@ namespace ntt
                     std::memcpy(file._dataBuffer.data(), &_fileBuffer[file._CRC._dataAddr], static_cast<std::size_t>(file._CRC._fileSize));
                 }
             }
-            _createFile(file);
+            // _createFile(file);
+        }
+    }
+
+    void FilesChunk::decompressFiles()
+    {
+        std::unordered_map<std::string, std::function<std::unique_ptr<ntt::BaseHandler>(const std::vector<std::byte> &)>> handlerFactories = {
+            {"ZIPX", [](const std::vector<std::byte> &buffer) { return std::make_unique<zipx::ZipX>(buffer); }},
+            {"LZ2K", [](const std::vector<std::byte> &buffer) { return std::make_unique<lz2k::LZ2K>(buffer); }},
+        };
+        std::string fileSign;
+
+        for (FileInfo &file : _files)
+        {
+            if (!file._isDir && file._CRC._fileSize != file._CRC._fileZsize) {
+                if (file._dataBuffer.size() >= 4ull) {
+                    fileSign = std::string(reinterpret_cast<const char*>(&file._dataBuffer[0]), 4);
+                    auto it = handlerFactories.find(fileSign);
+                    if (it != handlerFactories.end()) {
+                        auto handler = it->second(file._dataBuffer);
+                        handler->handle();
+                    } else {
+                        spdlog::warn("{} with signature {} is unknown.", file._fileName, fileSign);
+                    }
+                } else {
+                    spdlog::warn("File {} has insufficient data for signature extraction", file._fileName);
+                }
+            }
+            // _createFile(file);
         }
     }
 

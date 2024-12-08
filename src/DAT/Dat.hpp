@@ -20,38 +20,39 @@ namespace ntt
 {
     class Dat
     {
-    public:
-        explicit Dat(const std::string &inputFile);
-        ~Dat();
+        public:
+            explicit Dat(const std::string &inputFile);
+            ~Dat();
 
-        const std::string &getFilePath() const noexcept { return _datFilePath; }
-        const std::size_t getFileSize() const noexcept { return _fileSize; }
-        const std::vector<std::byte> &getFileBuffer() const noexcept { return _fileBuffer; }
+            const std::string &getFilePath() const noexcept { return _datFilePath; }
+            const std::size_t getFileSize() const noexcept { return _fileSize; }
+            const std::vector<std::byte> &getFileBuffer() const noexcept { return _fileBuffer; }
 
-        std::string readBytesInHex(std::size_t offset, std::size_t n) const;
+            std::string readBytesInHex(std::size_t offset, std::size_t n) const;
 
-        void readMagicHeader();
-        void extractLZ2K();
+            void readMagicHeader();
+            void extractLZ2K();
 
-        std::ptrdiff_t getFilesChunkOffset(const std::string &chunkSign) const;
+            std::ptrdiff_t getFilesChunkOffset(const std::string &chunkSign) const;
 
-        void setFilesChunkHeader(const ptrdiff_t headerOffset) { _filesChunk->setChunkHeader(headerOffset); };
-        void parseFilesChunk() { _filesChunk->parseChunk(); };
-        void getFilesOffset() { _filesChunk->getFilesOffset(); };
-        void setCRCdatabase() { _filesChunk->defineCRCdatabase(); };
-        void computeCRC() { _filesChunk->computeCRC(); };
-        void readFilesBuffer() { _filesChunk->readFilesOffsetBuffer(); };
+            void setFilesChunkHeader(const ptrdiff_t headerOffset) { _filesChunk->setChunkHeader(headerOffset); };
+            void parseFilesChunk() { _filesChunk->parseChunk(); };
+            void getFilesOffset() { _filesChunk->getFilesOffset(); };
+            void setCRCdatabase() { _filesChunk->defineCRCdatabase(); };
+            void computeCRC() { _filesChunk->computeCRC(); };
+            void readFilesBuffer() { _filesChunk->readFilesOffsetBuffer(); };
+            void decompressFiles() { _filesChunk->decompressFiles(); };
 
-    private:
-        std::string _datFilePath;
-        std::ifstream _datFile;
-        std::size_t _fileSize{0};
-        std::vector<std::byte> _fileBuffer;
-        std::unordered_map<std::string, std::function<void()>> _magicSign;
-        std::unique_ptr<FilesChunk> _filesChunk;
+        private:
+            std::string _datFilePath;
+            std::ifstream _datFile;
+            std::size_t _fileSize{0};
+            std::vector<std::byte> _fileBuffer;
+            std::unordered_map<std::string, std::function<void()>> _magicSign;
+            std::unique_ptr<FilesChunk> _filesChunk;
 
-        void _readFile();
-        void _initializeMagicSignMap();
+            void _readFile();
+            void _initializeMagicSignMap();
     };
 
     Dat::Dat(const std::string &inputFile)
