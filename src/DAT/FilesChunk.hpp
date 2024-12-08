@@ -145,20 +145,21 @@ namespace ntt
 
         typeBOH = utils::assignFromMemory(typeBOH, _fileBuffer[_filesChunkOffset], sizeof(std::uint32_t), true);
         fileCount2 = utils::assignFromMemory(fileCount2, _fileBuffer[_filesChunkOffset + 0x4], sizeof(std::uint32_t), true);
-        
+
         if (_FileCount != fileCount2)
             spdlog::warn("The number of files read from the archive differ from last check.");
 
         for (std::size_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
+            crc = {};
             if (!_files[fileIndex]._isDir) {
                 crc._packedVer = utils::assignFromMemory(crc._packedVer, _fileBuffer[_filesChunkOffset + 0x8 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 crc._dataAddr = utils::assignFromMemory(crc._dataAddr, _fileBuffer[_filesChunkOffset + 0xC + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 crc._fileZsize = utils::assignFromMemory(crc._fileZsize, _fileBuffer[_filesChunkOffset + 0x10 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
                 crc._fileSize = utils::assignFromMemory(crc._fileSize, _fileBuffer[_filesChunkOffset + 0x14 + (fileOffset * 0x10)], sizeof(std::uint32_t), true);
-                _CRCs.push_back(crc);
                 fileOffset += 1;
             }
+            _CRCs.push_back(crc);
         }
     }
 
@@ -209,10 +210,15 @@ namespace ntt
     {
         std::size_t chunkOffset = _filesChunkOffset + (_FileCount * 0x10) + 0x8;
         std::uint32_t crc = 0u;
+        std::uint32_t fileOffset = 0u;
 
-        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount; ++fileIndex)
+        for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
-            crc = utils::assignFromMemory(crc, _fileBuffer[chunkOffset + fileIndex * 0x4], sizeof(std::uint32_t), true);
+            crc = 0xFFFFFFFF;
+            if (!_files[fileIndex]._isDir) {
+                crc = utils::assignFromMemory(crc, _fileBuffer[chunkOffset + fileOffset * 0x4], sizeof(std::uint32_t), true);
+                fileOffset += 1;
+            }
             _crcDatabase.push_back(crc);
         }
     }
@@ -237,12 +243,13 @@ namespace ntt
         std::uint32_t crc = CRC_FNV_OFFSET;
         std::ptrdiff_t idx = 0;
         std::string normalizedPath;
+        CRCInfo crcData = {};
 
         for (std::uint32_t fileIndex = 0ull; fileIndex < _FileCount + _DirCount; ++fileIndex)
         {
             crc = CRC_FNV_OFFSET;
             normalizedPath.clear();
-            if (!_files[fileIndex]._isDir) {
+            if (!_files[fileIndex]._isDir && _crcDatabase[fileIndex] != 0xFFFFFFFF) {
                 normalizedPath = _normalizeFilename(_files[fileIndex]._pathName);
                 for (char c : normalizedPath) {
                     crc ^= static_cast<std::uint8_t>(c);
@@ -252,13 +259,13 @@ namespace ntt
                 auto it = std::find(_crcDatabase.begin(), _crcDatabase.end(), crc);
                 if (it != _crcDatabase.end()) {
                     idx = std::distance(_crcDatabase.begin(), it);
-                    _CRCs[fileIndex]._crcValue = crc;
-                    _CRCs[fileIndex]._crcPath = normalizedPath;
-                    _CRCs[fileIndex]._dataAddr = _CRCs[idx]._dataAddr;
-                    _CRCs[fileIndex]._fileZsize = _CRCs[idx]._fileZsize;
-                    _CRCs[fileIndex]._fileSize = _CRCs[idx]._fileSize;
-                    _CRCs[fileIndex]._dataAddr = _CRCs[idx]._dataAddr;
-                    _files[fileIndex]._CRC = _CRCs[fileIndex];
+                    crcData._crcValue = crc;
+                    crcData._crcPath = normalizedPath;
+                    crcData._dataAddr = _CRCs[idx]._dataAddr;
+                    crcData._fileZsize = _CRCs[idx]._fileZsize;
+                    crcData._fileSize = _CRCs[idx]._fileSize;
+                    crcData._dataAddr = _CRCs[idx]._dataAddr;
+                    _files[fileIndex]._CRC = crcData;
                 } else {
                     spdlog::warn("The CRC of the file {} has not been found.", _files[fileIndex]._pathName);
                 }
