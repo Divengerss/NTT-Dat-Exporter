@@ -220,7 +220,7 @@ namespace ntt
                 }
             }
 
-            std::ofstream file(relativePath, std::ios::out);
+            std::ofstream file(relativePath, std::ios::out | std::ios::binary);
             if (!file) {
                 spdlog::error("Failed to create file: {}", relativePath);
             } else {
@@ -346,7 +346,7 @@ namespace ntt
                     spdlog::warn("File {} has insufficient data for signature extraction", file._fileName);
                 }
             }
-            // _createFile(file);
+            _createFile(file);
         }
     }
 
